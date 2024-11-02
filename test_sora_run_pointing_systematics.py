@@ -11,11 +11,11 @@ resource_unit = "SORA"
 bizcode = "DU10503"
 user_email = 'takase_y@s.okayama-u.ac.jp'  # your email for notification
 
-node = 256
+node = 1#256 # 182/28=26
 node_mem = 28   # Unit: GiB, Upper limit=28GiB, Value when unspecified=28GiB
 mpi_process = 48*node  # 48   # Upper limit of number of process per node is 48, it can be 48*`node`
-#mode = "debug"
-mode = "default"
+mode = "debug"
+#mode = "default"
 #job_name = "dbg_pntsys"
 job_name = "pntsys"
 # When you use the `debug` mode you should requesgt <= 1800 == "00:30:00"
@@ -26,11 +26,11 @@ if mode == "debug":
 # --------- TOML file params setting ----------- #
 # [general]
 imo_path = "/home/t/t541/data/litebird/litebird_imo/IMO/schema.json"
-base_dir_name = "hwp_wedge_1yr"
+base_dir_name = "test_hwp_wedge"
 imo_version = 'v2'
 telescope = 'MFT'  # sys.argv[1] #e.g. 'LFT'
-nside_in = 2048
-nside_out = 512
+nside_in = 128 #2048
+nside_out = 128 #512
 cmb_seed = 33
 cmb_r = 0.0
 random_seed = 12345
@@ -40,7 +40,7 @@ channel = 'M1-100'  # sys.argv[2] #e.g. 'L4-140'
 det_names_file = 'detectors_'+telescope+'_'+channel+'_T+B'  # _case'+case]
 base_path = os.path.join(coderoot, f'outputs/{base_dir_name}')
 start_time = 0 # '2030-04-01T00:00:00' #float for circular motion of earth around Sun, string for ephemeridis
-duration_s = 3600*24*365 #simulated seconds
+duration_s = 3600#*24*365 #simulated seconds
 sampling_hz = 19.0
 gamma = 0.0
 wedge_angle_arcmin = 1.0
