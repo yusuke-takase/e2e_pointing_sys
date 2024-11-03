@@ -2,6 +2,7 @@ import numpy as np
 import subprocess
 import sys
 import os
+import uuid
 
 # --------- JSS setting ----------- #
 jss_account = "t541"
@@ -11,9 +12,9 @@ resource_unit = "SORA"
 bizcode = "DU10503"
 user_email = 'takase_y@s.okayama-u.ac.jp'  # your email for notification
 
-node = 1#256 # 182/28=26
+node = 26#256 # 182/28=26
 node_mem = 28   # Unit: GiB, Upper limit=28GiB, Value when unspecified=28GiB
-mpi_process = 48*node  # 48   # Upper limit of number of process per node is 48, it can be 48*`node`
+mpi_process = 28*node  # 48   # Upper limit of number of process per node is 48, it can be 48*`node`
 mode = "debug"
 #mode = "default"
 #job_name = "dbg_pntsys"
@@ -29,8 +30,8 @@ imo_path = "/home/t/t541/data/litebird/litebird_imo/IMO/schema.json"
 base_dir_name = "test_hwp_wedge"
 imo_version = 'v2'
 telescope = 'MFT'  # sys.argv[1] #e.g. 'LFT'
-nside_in = 128 #2048
-nside_out = 128 #512
+nside_in = 512 #2048
+nside_out = 512 #512
 cmb_seed = 33
 cmb_r = 0.0
 random_seed = 12345
@@ -60,8 +61,8 @@ if not os.path.exists(logdir):
 if not os.path.exists(ancillary):
     os.makedirs(ancillary, exist_ok=True)
 
-# toml_filename   = str(uuid.uuid4())
-toml_filename = 'pntsys_'+det_names_file+'_params'
+toml_uuid = str(uuid.uuid4())
+toml_filename = 'pntsys_'+det_names_file+'_params'+toml_uuid
 tomlfile_path = os.path.join(ancillary, toml_filename+'.toml')
 tomlfile_data = f"""
 [hpc]

@@ -12,6 +12,9 @@ import toml
 from litebird_sim import mpi
 import json
 from litebird_sim import TimeProfiler, profile_list_to_speedscope
+from logging import getLogger
+logger = getLogger(__name__)
+#logger.info('message')
 
 def plot_map(m, title, save_filename):
     '''
@@ -61,6 +64,74 @@ def save_append_maps(map_path,map_name,map_output,cov_output,figures):
                                 save_filename=map_name+'_'+fields[i]+'.png'))
     return figures
 
+def get_simulation(toml_filename, comm):
+    tomlfile_path = os.path.dirname(
+        os.getcwd())+"/ancillary/"+toml_filename+".toml"
+    toml_data = toml.load(open(tomlfile_path))
+    random_seed = int(toml_data["general"]["random_seed"])
+    imo_path = toml_data["general"]["imo_path"]
+
+    imo = lbs.Imo(flatfile_location=imo_path)
+    sim = lbs.Simulation(
+        parameter_file=tomlfile_path,
+        random_seed=random_seed,
+        imo=imo,
+        mpi_comm=comm
+    )
+
+    imo_version = sim.parameters["general"]["imo_version"]
+    telescope = sim.parameters["general"]["telescope"]
+    det_names_file = sim.parameters["general"]["det_names_file"]
+    sampling_hz = sim.parameters["simulation"]["sampling_hz"]
+    hwp_rpm = sim.parameters["simulation"]["hwp_rpm"]
+    if hwp_rpm == 'None':
+        hwp_rpm = None
+    else:
+        hwp_rpm = float(hwp_rpm)
+    # read channel, noise and detector names
+    det_names_file_path = os.path.dirname(
+        os.getcwd())+"/ancillary/detsfile/"+det_names_file+".txt"
+    det_file = np.genfromtxt(det_names_file_path,
+                            skip_header=1,
+                            dtype=str)
+
+    channels = det_file[:, 1]  # [det_file[1]]
+    # [det_file[4].astype(dtype=float)]
+    noises = det_file[:, 4].astype(dtype=float)
+    detnames = det_file[:, 5]  # [det_file[5]]
+
+    # number of detectors = raws of {det_names_file}.txt
+    ndet = np.size(detnames)
+
+    # loading the instrument metadata
+    # Load the definition of the instrument (MFT)
+    sim.set_instrument(
+        lbs.InstrumentInfo.from_imo(
+            imo,
+            f"/releases/{imo_version}/satellite/{telescope}/instrument_info",
+        )
+    )
+    sim.set_scanning_strategy(
+        imo_url=f"/releases/{imo_version}/satellite/scanning_parameters/",
+        delta_time_s=1.0 / sampling_hz,
+    )
+    if hwp_rpm is not None:
+        sim.set_hwp(lbs.IdealHWP(hwp_rpm * 2 * np.pi / 60))
+        sim.instrument.hwp_rpm = hwp_rpm
+    else:
+        sim.set_hwp(lbs.IdealHWP(sim.instrument.hwp_rpm * 2 * np.pi / 60))
+
+    dets = []
+    for i_det in range(ndet):
+        det = lbs.DetectorInfo.from_imo(
+            url="/releases/"+imo_version+"/satellite/"+telescope+"/" +
+                channels[i_det]+"/"+detnames[i_det]+"/detector_info",
+            imo=imo
+        )
+        det.sampling_rate_hz = sampling_hz
+        dets.append(det)
+    return sim, dets, channels, detnames
+
 def pointing_systematics(toml_filename):
     comm = lbs.MPI_COMM_WORLD
     rank = comm.Get_rank()
@@ -69,25 +140,8 @@ def pointing_systematics(toml_filename):
 
     perf_name = "start"
     with TimeProfiler(name=perf_name, my_param=perf_name) as perf:
-        tomlfile_path = os.path.dirname(
-            os.getcwd())+"/ancillary/"+toml_filename+".toml"
-        toml_data = toml.load(open(tomlfile_path))
-        random_seed = int(toml_data["general"]["random_seed"])
-        imo_path = toml_data["general"]["imo_path"]
-
-        imo = lbs.Imo(flatfile_location=imo_path)
-        sim = lbs.Simulation(
-            parameter_file=tomlfile_path,
-            random_seed=random_seed,
-            imo=imo,
-            mpi_comm=comm
-        )
-
-        # extract useful parameters
-        node = sim.parameters["hpc"]["node"]
-        node_mem = sim.parameters["hpc"]["node_mem"]
-        mpi_process = sim.parameters["hpc"]["mpi_process"]
-        elapse = sim.parameters["hpc"]["elapse"]
+        sim, dets, channels, detnames = get_simulation(toml_filename, comm)
+        hpc_info = sim.parameters["hpc"]
 
         imo_version = sim.parameters["general"]["imo_version"]
         telescope = sim.parameters["general"]["telescope"]
@@ -103,54 +157,19 @@ def pointing_systematics(toml_filename):
         sampling_hz = sim.parameters["simulation"]["sampling_hz"]
         gamma = sim.parameters["simulation"]["gamma"]
         wedge_angle_arcmin = sim.parameters["simulation"]["wedge_angle_arcmin"]
-        hwp_rpm = sim.parameters["simulation"]["hwp_rpm"]
-        if hwp_rpm == 'None':
-            hwp_rpm = None
-        else:
-            hwp_rpm = float(hwp_rpm)
-
-        # read channel, noise and detector names
-        det_names_file_path = os.path.dirname(
-            os.getcwd())+"/ancillary/detsfile/"+det_names_file+".txt"
-        det_file = np.genfromtxt(det_names_file_path,
-                                skip_header=1,
-                                dtype=str)
-
-        channels = det_file[:, 1]  # [det_file[1]]
-        # [det_file[4].astype(dtype=float)]
-        noises = det_file[:, 4].astype(dtype=float)
-        detnames = det_file[:, 5]  # [det_file[5]]
-
-        # number of detectors = raws of {det_names_file}.txt
-        ndet = np.size(detnames)
-
-        # loading the instrument metadata
-        # Load the definition of the instrument (MFT)
-        sim.set_instrument(
-            lbs.InstrumentInfo.from_imo(
-                imo,
-                f"/releases/{imo_version}/satellite/{telescope}/instrument_info",
-            )
-        )
-        sim.set_scanning_strategy(
-            imo_url=f"/releases/{imo_version}/satellite/scanning_parameters/",
-            delta_time_s=1.0 / sampling_hz,
-        )
-        if hwp_rpm is not None:
-            sim.set_hwp(lbs.IdealHWP(hwp_rpm * 2 * np.pi / 60))
-            sim.instrument.hwp_rpm = hwp_rpm
-        else:
-            sim.set_hwp(lbs.IdealHWP(sim.instrument.hwp_rpm * 2 * np.pi / 60))
 
         ch_info = lbs.FreqChannelInfo.from_imo(
             url="/releases/"+imo_version+"/satellite/" +
                 telescope+"/"+channels[0]+"/channel_info",
-            imo=imo)
+            imo=sim.imo)
+        ndet = len(dets)
 
     # produce cmb and fg maps; rank 0 reads maps and broadcasts them to the other processors
     if(rank==0):
         perf_list = []
-        print("======= Prepare input maps ========")
+        message = "======= Prepare input maps ========"
+        print(message)
+        logger.info(message)
         perf_name = "run_mbs"
         with TimeProfiler(name=perf_name, my_param=perf_name) as perf:
             Mbsparams = lbs.MbsParameters(
@@ -180,24 +199,17 @@ def pointing_systematics(toml_filename):
 
     comm.barrier()
 
-    dets = []
-    for i_det in range(ndet):
-        det = lbs.DetectorInfo.from_imo(
-            url="/releases/"+imo_version+"/satellite/"+telescope+"/" +
-                channels[i_det]+"/"+detnames[i_det]+"/detector_info",
-            imo=imo
-        )
-        det.sampling_rate_hz = sampling_hz
-        dets.append(det)
-
     for i_run, syst in enumerate([False, True]):
         if(rank==0):
-            print(f"======= Create observations/pointings {i_run}th loop ========")
+            message = f"======= Create observations/pointings {i_run}th loop ========"
+            print(message)
+            logger.info(message)
 
         perf_name = f"run_pointings_{i_run}th"
         with TimeProfiler(name=perf_name, my_param=perf_name) as perf:
-            sim_temp = copy.deepcopy(sim)
-            dets_temp = copy.deepcopy(dets)
+            #sim_temp = copy.deepcopy(sim)
+            #dets_temp = copy.deepcopy(dets)
+            sim_temp, dets_temp, channels, detnames = get_simulation(toml_filename, comm)
             if syst == True:
                 pntsys = lbs.PointingSys(sim_temp, dets_temp)
                 refractive_idx = 3.1
@@ -235,7 +247,6 @@ def pointing_systematics(toml_filename):
                     sim_temp.observations[i_obs].pointing_matrix
                     for i_obs in range(n_obs)
                     ]
-                #sim_no_syst = copy.deepcopy(sim_temp)
             else:
                 pointings_syst = [
                     sim_temp.observations[i_obs].pointing_matrix
@@ -254,14 +265,19 @@ def pointing_systematics(toml_filename):
                     input_map_in_galactic=True,
                     interpolation="linear",
                 )
-                sim_syst = copy.deepcopy(sim_temp)
+                #sim_syst = copy.deepcopy(sim_temp)
+                sim_syst = (sim_temp)
         if(rank==0):
             perf_list.append(perf)
-    del sim
-    del sim_temp
+    descr = sim_temp.describe_mpi_distribution()
+    print(descr)
+    #del sim
+    #del sim_temp
 
     if(rank==0):
-        print("======= Calculate hitmap ========")
+        message = "======= Calculate hitmap ========"
+        print(message)
+        logger.info(message)
 
     perf_name = "run_hitmap"
     with TimeProfiler(name=perf_name, my_param=perf_name) as perf:
@@ -284,7 +300,9 @@ def pointing_systematics(toml_filename):
         perf_list.append(perf)
 
     if(rank==0):
-        print("======= Save hitmap ========")
+        message = "======= Save hitmap ========"
+        print(message)
+        logger.info(message)
         map_path = os.path.join(base_path, 'maps/')
         if not os.path.exists(map_path):
             os.mkdir(map_path)
@@ -297,7 +315,10 @@ def pointing_systematics(toml_filename):
     comm.barrier()
 
     if(rank==0):
-        print("======= Save TOD and power spectrum plots ========")
+        message = "======= Save TOD and power spectrum plots ========"
+        print(message)
+        logger.info(message)
+
         save_filename = f"{telescope}_{channels[0]}_tod_ps_{duration_s}s_wedge_{wedge_angle_arcmin}arcmin.png"
         time_cutoff_s = 3600*3
         limit = int(time_cutoff_s*sampling_hz)
@@ -344,7 +365,10 @@ def pointing_systematics(toml_filename):
         figures.append((fig, save_filename))
 
     if(rank==0):
-        print("======= Binning map-making ========")
+        message = "======= Binning map-making ========"
+        print(message)
+        logger.info(message)
+
     perf_name = "run_binner"
     with TimeProfiler(name=perf_name, my_param=perf_name) as perf:
         comm.barrier()
@@ -354,12 +378,14 @@ def pointing_systematics(toml_filename):
             pointings=pointings_no_syst,
             output_coordinate_system=lbs.CoordinateSystem.Galactic,
         )
-        comm.barrier()
     if(rank==0):
         perf_list.append(perf)
 
     if (rank == 0):
-        print("======= Save output map ========")
+        message = "======= Save output map ========"
+        print(message)
+        logger.info(message)
+
         map_name = f'{telescope}_{channels[0]}_binnedmap_{duration_s}s_wedge_{wedge_angle_arcmin}arcmin'
         figures = save_append_maps(
             map_path,
@@ -368,17 +394,21 @@ def pointing_systematics(toml_filename):
             None, #cov_output,
             figures
         )
-        map_name = f'{telescope}_{channels[0]}_residual_{duration_s}s_wedge_{wedge_angle_arcmin}arcmin'
-        figures = save_append_maps(
-            map_path,
-            map_name,
-            maps[channels[0]]-binner_results.binned_map,
-            None, #cov_output,
-            figures
-        )
         sim_syst.append_to_report("""
 
 ## Run parameters
+
+[HPC settings]
+
+{% for item in hpc_info.items() %}
+ - {{item[0]}} = {{item[1]}}
+{% endfor %}
+
+- machine = {{machine}}
+- node = {{node}}
+- node_mem = {{node_mem}}
+- mpi_process = {{mpi_process}}
+- elapse = {{elapse}}
 
 [General]
 
@@ -445,6 +475,7 @@ obs = lbs.io.read_one_observation("path/to/file.hdf5", limit_mpi_rank=False, tod
 ```
 
 """,
+            hpc_info = hpc_info,
             imo_version=imo_version,
             telescope=telescope,
             det_names_file=det_names_file,
@@ -452,10 +483,6 @@ obs = lbs.io.read_one_observation("path/to/file.hdf5", limit_mpi_rank=False, tod
             nside_out=nside_out,
             cmb_r=cmb_r,
             cmb_seed = cmb_seed,
-            node = node,
-            node_mem = node_mem,
-            mpi_process = mpi_process,
-            elapse = elapse,
 
             base_path=base_path,
             duration_s=duration_s,
@@ -472,6 +499,9 @@ obs = lbs.io.read_one_observation("path/to/file.hdf5", limit_mpi_rank=False, tod
 
         sim_syst.flush()
 
-        print("======= Simulation is finished =======")
+        message = "======= Simulation is finished ======="
+        print(message)
+        logger.info(message)
+
         with open(f"{base_path}/profile.json", "wt") as out_f:
             json.dump(profile_list_to_speedscope(perf_list), out_f)
