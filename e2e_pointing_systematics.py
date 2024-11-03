@@ -191,6 +191,9 @@ def pointing_systematics(toml_filename):
                 channel_list=ch_info
             )
             maps = mbs.run_all()[0]
+            message = "======= Inputmap is generated ========"
+            print(message)
+            logger.info(message)
         perf_list.append(perf)
     else:
         maps = None
@@ -208,8 +211,6 @@ def pointing_systematics(toml_filename):
 
         perf_name = f"run_pointings_{i_run}th"
         with TimeProfiler(name=perf_name, my_param=perf_name) as perf:
-            #sim_temp = copy.deepcopy(sim)
-            #dets_temp = copy.deepcopy(dets)
             sim_temp, dets_temp, channels, detnames = get_simulation(toml_filename, comm)
             if syst == True:
                 pntsys = lbs.PointingSys(sim_temp, dets_temp)
@@ -223,8 +224,8 @@ def pointing_systematics(toml_filename):
                 pntsys.hwp.tilt_phase_rad = 0
                 comm.barrier()
                 pntsys.hwp.add_hwp_rot_disturb()
-                comm.barrier()
 
+            comm.barrier()
             sim_temp.create_observations(
                 detectors=dets_temp,
                 n_blocks_det=1,
