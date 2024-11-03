@@ -4,12 +4,14 @@ import sys
 import os
 import uuid
 
+whoami = subprocess.run(['whoami'], capture_output=True, text=True)
+jss_account = whoami.stdout.strip()
+bizcode = os.getenv('bizcode') # load registered enviroment variable
+
 # --------- JSS setting ----------- #
-jss_account = "t541"
-venv_base = "/ssd/t/t541/.src/lbsim_branches/lbs_hwp_wedge/bin/activate"
-coderoot = '/home/t/t541/data/program/e2e_sim/pointing_sys'
+venv_base = f"/ssd/{jss_account[0]}/{jss_account}/.src/lbsim_branches/lbs_hwp_wedge/bin/activate"
+coderoot = f'/home/{jss_account[0]}/{jss_account}/data/program/e2e_sim/pointing_sys'
 resource_unit = "SORA"
-bizcode = "DU10503"
 user_email = 'takase_y@s.okayama-u.ac.jp'  # your email for notification
 
 node = 26#256 # 182/28=26
@@ -26,7 +28,7 @@ if mode == "debug":
 
 # --------- TOML file params setting ----------- #
 # [general]
-imo_path = "/home/t/t541/data/litebird/litebird_imo/IMO/schema.json"
+imo_path = f"/home/{jss_account[0]}/{jss_account}/data/litebird/litebird_imo/IMO/schema.json"
 base_dir_name = "test_hwp_wedge"
 imo_version = 'v2'
 telescope = 'MFT'  # sys.argv[1] #e.g. 'LFT'

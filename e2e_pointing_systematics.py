@@ -78,7 +78,6 @@ def get_simulation(toml_filename, comm):
         imo=imo,
         mpi_comm=comm
     )
-
     imo_version = sim.parameters["general"]["imo_version"]
     telescope = sim.parameters["general"]["telescope"]
     det_names_file = sim.parameters["general"]["det_names_file"]
@@ -142,6 +141,8 @@ def pointing_systematics(toml_filename):
     with TimeProfiler(name=perf_name, my_param=perf_name) as perf:
         sim, dets, channels, detnames = get_simulation(toml_filename, comm)
         hpc_info = sim.parameters["hpc"]
+        general_info = sim.parameters["general"]
+        simlation_info = sim.parameters["simulation"]
 
         imo_version = sim.parameters["general"]["imo_version"]
         telescope = sim.parameters["general"]["telescope"]
@@ -404,35 +405,19 @@ def pointing_systematics(toml_filename):
  - {{item[0]}} = {{item[1]}}
 {% endfor %}
 
-- machine = {{machine}}
-- node = {{node}}
-- node_mem = {{node_mem}}
-- mpi_process = {{mpi_process}}
-- elapse = {{elapse}}
-
 [General]
 
-- imo_version = {{imo_version}}
-- telescope = {{telescope}}
-- det_names_file = `{{det_names_file}}`
-- nside_in = {{nside_in}}
-- nside_out = {{nside_out}}
-- cmb_r = {{cmb_r}}
-- cmb_seed = {{cmb_seed}}
-- node = {{node}}
-- node_mem = {{node_mem}}
-- mpi_process = {{mpi_process}}
-- elapse = {{elapse}}
+{% for item in general_info.items() %}
+ - {{item[0]}} = {{item[1]}}
+{% endfor %}
 
 [Simulation]
 
-- base_path = `{{base_path}}`
-- start_time = {{start_time}}
-- duration_s = {{duration_s}}
-- sampling_hz = {{sampling_hz}}
-- FPU_orientation_angle = {{gamma}}
-- wedge_angle_arcmin = {{wedge_angle_arcmin}}
-- hwp_rpm = {{hwp_rpm}}
+{% for item in simulation_info.items() %}
+ - {{item[0]}} = {{item[1]}}
+{% endfor %}
+- used_hwp_rpm = {{used_hwp_rpm}}
+  - When the `hwp_rpm` is `None`, this number is used.
 
 ## Output maps
 
@@ -476,22 +461,10 @@ obs = lbs.io.read_one_observation("path/to/file.hdf5", limit_mpi_rank=False, tod
 
 """,
             hpc_info = hpc_info,
-            imo_version=imo_version,
-            telescope=telescope,
-            det_names_file=det_names_file,
-            nside_in=nside_in,
-            nside_out=nside_out,
-            cmb_r=cmb_r,
-            cmb_seed = cmb_seed,
+            general_info=general_info,
+            simulation_info=simlation_info,
 
-            base_path=base_path,
-            duration_s=duration_s,
-            start_time=start_time,
-            sampling_hz=sampling_hz,
-            gamma=gamma,
-            wedge_angle_arcmin=wedge_angle_arcmin,
-            hwp_rpm=sim_syst.instrument.hwp_rpm,
-
+            used_hwp_rpm=sim_syst.instrument.hwp_rpm,
             figures=figures,
             figs=figures, # needed to loop over figures
             detnames=detnames,

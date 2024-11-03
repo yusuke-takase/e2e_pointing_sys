@@ -3,13 +3,15 @@ import subprocess
 import sys
 import os
 
+whoami = subprocess.run(['whoami'], capture_output=True, text=True)
+jss_account = whoami.stdout.strip()
+bizcode = os.getenv('bizcode') # load registered enviroment variable
+
 # --------- JSS setting ----------- #
-jss_account = "t541"
 conda_base = f"/ssd/{jss_account[0]}/{jss_account}/.src/anaconda3/etc/profile.d/conda.sh"
 conda_env = "lbs_wedge"
-coderoot = '/home/t/t541/data/program/e2e_sim/pointing_sys'
+coderoot = f'/home/{jss_account[0]}/{jss_account}/data/program/e2e_sim/pointing_sys'
 resource_unit = "RURI"
-bizcode = "DU10503"
 user_email = 'takase_y@s.okayama-u.ac.jp'  # your email for notification
 
 vnode = 1 # 仮想ノード数, RURIは100が最大
@@ -27,19 +29,19 @@ if mode == "debug":
 
 # --------- TOML file params setting ----------- #
 # [general]
-imo_path = "/home/t/t541/data/litebird/litebird_imo/IMO/schema.json"
-base_dir_name = "test_1_ruri_hwp_wedge_1day_2048to512"
+imo_path = f"/home/{jss_account[0]}/{jss_account}/data/litebird/litebird_imo/IMO/schema.json"
+base_dir_name = "test_2_ruri_hwp_wedge_1day_2048to512"
 imo_version = 'v2'
-telescope = 'MFT'  # sys.argv[1] #e.g. 'LFT'
-nside_in = 2048
-nside_out = 512#512
+telescope = 'MFT'
+nside_in = 128#2048
+nside_out = 128#512
 cmb_seed = 33
 cmb_r = 0.0
 random_seed = 12345
 
 # [simulation]
-channel = 'M1-100'  # sys.argv[2] #e.g. 'L4-140'
-det_names_file = 'detectors_'+telescope+'_'+channel+'_T+B'  # _case'+case]
+channel = 'M1-100'
+det_names_file = 'detectors_'+telescope+'_'+channel+'_T+B'
 base_path = os.path.join(coderoot, f'outputs/{base_dir_name}')
 start_time = 0 # '2030-04-01T00:00:00' #float for circular motion of earth around Sun, string for ephemeridis
 duration_s = 3600#*24#*365 #simulated seconds
@@ -73,6 +75,7 @@ vnode_mem = {vnode_mem}
 vnode_core = {vnode_core}
 total_pcocess = {total_process}
 elapse = '{elapse}'
+mode = '{mode}'
 
 [general]
 imo_path = '{imo_path}'
@@ -103,9 +106,9 @@ jobscript_data = f"""#!/bin/zsh
 #JX -L rscunit={resource_unit}
 #JX -L rscgrp={mode}
 #JX -L elapse={elapse}
-#JX -L vnode={vnode}           # 仮想ノード数
-#JX -L vnode-core={vnode_core} # ノードあたりの要求コア数
-#JX -L vnode-mem={vnode_mem}Gi # ノードあたりの要求メモリ量
+#JX -L vnode={vnode}
+#JX -L vnode-core={vnode_core}
+#JX -L vnode-mem={vnode_mem}Gi
 
 #JX -o {logdir}/%n_%j.out
 #JX -e {logdir}/%n_%j.err
