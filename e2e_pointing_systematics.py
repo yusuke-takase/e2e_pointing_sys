@@ -339,6 +339,8 @@ def pointing_systematics(toml_filename):
         if(rank==0):
             figures = []
             map_path = os.path.join(base_path, 'maps/')
+            if not os.path.exists(map_path):
+                os.mkdir(map_path)
     del pointings_syst
 
     comm.barrier()
@@ -407,10 +409,9 @@ def pointing_systematics(toml_filename):
             pointings=pointings_no_syst,
             output_coordinate_system=lbs.CoordinateSystem.Galactic,
         )
-    if(rank==0):
-        perf_list.append(perf)
 
     if (rank == 0):
+        perf_list.append(perf)
         message = "======= Save output map ========"
         print(message)
         logger.info(message)

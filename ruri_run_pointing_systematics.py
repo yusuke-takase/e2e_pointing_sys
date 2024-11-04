@@ -2,6 +2,7 @@ import numpy as np
 import subprocess
 import sys
 import os
+import uuid
 
 whoami = subprocess.run(['whoami'], capture_output=True, text=True)
 jss_account = whoami.stdout.strip()
@@ -16,24 +17,30 @@ user_email = 'takase_y@s.okayama-u.ac.jp'  # your email for notification
 
 vnode = 1 # 仮想ノード数, RURIは100が最大
 vnode_core = 20 # ノードあたりの要求コア数, RURIは36が最大
-vnode_mem = 2048 # ノードあたりの要求メモリ量, RURIは5,850GBが最大
+vnode_mem = 1024 # ノードあたりの要求メモリ量, RURIは5,850GBが最大
+duration_s = 3600*24*365 #simulated seconds
+nside_in = 2048
+nside_out = 512
+base_dir_name = "241104_test3_1yr_2048"
 
 #mode = "debug" # debugモードでの最大使用コア1800
 mode = "default"
-job_name = "pntsys"
-# When you use the `debug` mode you should requesgt <= 1800 == "00:30:00"
 elapse = "02:30:00"
 if mode == "debug":
-    elapse = "00:30:00"
+    elapse = "00:15:00"
+
+
+job_name = "pntsys"
+# When you use the `debug` mode you should requesgt <= 1800 == "00:30:00"
+
 
 # --------- TOML file params setting ----------- #
 # [general]
 imo_path = f"/home/{jss_account[0]}/{jss_account}/data/litebird/litebird_imo/IMO/schema.json"
-base_dir_name = "test_ruri_wedge_1yr_20core"
+
 imo_version = 'v2'
 telescope = 'MFT'
-nside_in = 2048
-nside_out = 512
+
 cmb_seed = 33
 cmb_r = 0.0
 random_seed = 12345
@@ -43,11 +50,12 @@ channel = 'M1-100'
 det_names_file = 'detectors_'+telescope+'_'+channel+'_T+B'
 base_path = os.path.join(coderoot, f'outputs/{base_dir_name}')
 start_time = 0 # '2030-04-01T00:00:00' #float for circular motion of earth around Sun, string for ephemeridis
-duration_s = 3600*24*365 #simulated seconds
+
 sampling_hz = 19.0
 gamma = 0.0
 wedge_angle_arcmin = 1.0
 hwp_rpm = None # if None, the imo value will be used.
+save_hitmap = False
 
 # --------- Setting is done, bottoms are automated ----------- #
 
@@ -62,8 +70,8 @@ if not os.path.exists(logdir):
 if not os.path.exists(ancillary):
     os.makedirs(ancillary, exist_ok=True)
 
-# toml_filename   = str(uuid.uuid4())
-toml_filename = 'pntsys_'+det_names_file+'_params'
+toml_uuid   = str(uuid.uuid4())
+toml_filename = 'pntsys_'+det_names_file+'_params_'+toml_uuid
 tomlfile_path = os.path.join(ancillary, toml_filename+'.toml')
 tomlfile_data = f"""
 [hpc]
@@ -84,6 +92,7 @@ nside_out = {nside_out}
 random_seed = {random_seed}
 cmb_seed = {cmb_seed}
 cmb_r = {cmb_r}
+save_hitmap = '{save_hitmap}'
 
 [simulation]
 base_path = '{base_path}'

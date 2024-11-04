@@ -14,26 +14,26 @@ coderoot = f'/home/{jss_account[0]}/{jss_account}/data/program/e2e_sim/pointing_
 resource_unit = "SORA"
 user_email = 'takase_y@s.okayama-u.ac.jp'  # your email for notification
 
-node = 26#256 # 182/28=26
+node = 4
 node_mem = 28   # Unit: GiB, Upper limit=28GiB, Value when unspecified=28GiB
-mpi_process = 28*node  # 48   # Upper limit of number of process per node is 48, it can be 48*`node`
+mpi_process = 48*node  # 48   # Upper limit of number of process per node is 48, it can be 48*`node`
 mode = "debug"
 #mode = "default"
 #job_name = "dbg_pntsys"
 job_name = "pntsys"
 # When you use the `debug` mode you should requesgt <= 1800 == "00:30:00"
-elapse = "01:30:00"
+elapse = "01:00:00"
 if mode == "debug":
     elapse = "00:30:00"
 
 # --------- TOML file params setting ----------- #
 # [general]
 imo_path = f"/home/{jss_account[0]}/{jss_account}/data/litebird/litebird_imo/IMO/schema.json"
-base_dir_name = "test_hwp_wedge"
+base_dir_name = "hwp_wedge_1day"
 imo_version = 'v2'
 telescope = 'MFT'  # sys.argv[1] #e.g. 'LFT'
-nside_in = 512 #2048
-nside_out = 512 #512
+nside_in = 2048
+nside_out = 512
 cmb_seed = 33
 cmb_r = 0.0
 random_seed = 12345
@@ -43,11 +43,12 @@ channel = 'M1-100'  # sys.argv[2] #e.g. 'L4-140'
 det_names_file = 'detectors_'+telescope+'_'+channel+'_T+B'  # _case'+case]
 base_path = os.path.join(coderoot, f'outputs/{base_dir_name}')
 start_time = 0 # '2030-04-01T00:00:00' #float for circular motion of earth around Sun, string for ephemeridis
-duration_s = 3600#*24*365 #simulated seconds
+duration_s = 3600*24#*24*180#365 #simulated seconds
 sampling_hz = 19.0
 gamma = 0.0
 wedge_angle_arcmin = 1.0
 hwp_rpm = None # if None, the imo value will be used.
+save_hitmap = False
 
 # --------- Setting is done, bottoms are automated ----------- #
 
@@ -63,15 +64,18 @@ if not os.path.exists(logdir):
 if not os.path.exists(ancillary):
     os.makedirs(ancillary, exist_ok=True)
 
-toml_uuid = str(uuid.uuid4())
-toml_filename = 'pntsys_'+det_names_file+'_params'+toml_uuid
+toml_uuid   = str(uuid.uuid4())
+toml_filename = 'pntsys_'+det_names_file+'_params_'+toml_uuid
+toml_filename = 'pntsys_'+det_names_file+'_params'
 tomlfile_path = os.path.join(ancillary, toml_filename+'.toml')
 tomlfile_data = f"""
 [hpc]
+machine = '{resource_unit}'
 node = {node}
 node_mem = {node_mem}
 mpi_process = {mpi_process}
 elapse = '{elapse}'
+mode = '{mode}'
 
 [general]
 imo_path = '{imo_path}'
@@ -83,6 +87,7 @@ nside_out = {nside_out}
 random_seed = {random_seed}
 cmb_seed = {cmb_seed}
 cmb_r = {cmb_r}
+save_hitmap = '{save_hitmap}'
 
 [simulation]
 base_path = '{base_path}'

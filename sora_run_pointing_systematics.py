@@ -48,6 +48,7 @@ sampling_hz = 19.0
 gamma = 0.0
 wedge_angle_arcmin = 1.0
 hwp_rpm = None # if None, the imo value will be used.
+save_hitmap = False
 
 # --------- Setting is done, bottoms are automated ----------- #
 
@@ -63,8 +64,8 @@ if not os.path.exists(logdir):
 if not os.path.exists(ancillary):
     os.makedirs(ancillary, exist_ok=True)
 
-#toml_uuid = str(uuid.uuid4())
-toml_filename = 'pntsys_'+det_names_file+'_params'#+toml_uuid
+toml_uuid   = str(uuid.uuid4())
+toml_filename = 'pntsys_'+det_names_file+'_params_'+toml_uuid
 toml_filename = 'pntsys_'+det_names_file+'_params'
 tomlfile_path = os.path.join(ancillary, toml_filename+'.toml')
 tomlfile_data = f"""
@@ -74,6 +75,7 @@ node = {node}
 node_mem = {node_mem}
 mpi_process = {mpi_process}
 elapse = '{elapse}'
+mode = '{mode}'
 
 [general]
 imo_path = '{imo_path}'
@@ -85,6 +87,7 @@ nside_out = {nside_out}
 random_seed = {random_seed}
 cmb_seed = {cmb_seed}
 cmb_r = {cmb_r}
+save_hitmap = '{save_hitmap}'
 
 [simulation]
 base_path = '{base_path}'

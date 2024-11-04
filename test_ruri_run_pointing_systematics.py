@@ -2,6 +2,7 @@ import numpy as np
 import subprocess
 import sys
 import os
+import uuid
 
 whoami = subprocess.run(['whoami'], capture_output=True, text=True)
 jss_account = whoami.stdout.strip()
@@ -16,7 +17,7 @@ user_email = 'takase_y@s.okayama-u.ac.jp'  # your email for notification
 
 vnode = 1 # 仮想ノード数, RURIは100が最大
 vnode_core = 20 # ノードあたりの要求コア数, RURIは36が最大
-vnode_mem = 64 # ノードあたりの要求メモリ量, RURIは5,850GBが最大
+vnode_mem = 256 # ノードあたりの要求メモリ量, RURIは5,850GBが最大
 
 mode = "debug" # debugモードでの最大使用コア1800
 #mode = "default"
@@ -63,8 +64,8 @@ if not os.path.exists(logdir):
 if not os.path.exists(ancillary):
     os.makedirs(ancillary, exist_ok=True)
 
-# toml_filename   = str(uuid.uuid4())
-toml_filename = 'pntsys_'+det_names_file+'_params'
+toml_uuid   = str(uuid.uuid4())
+toml_filename = 'pntsys_'+det_names_file+'_params_'+toml_uuid
 tomlfile_path = os.path.join(ancillary, toml_filename+'.toml')
 tomlfile_data = f"""
 [hpc]
