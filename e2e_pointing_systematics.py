@@ -213,6 +213,8 @@ def pointing_systematics(toml_filename):
     comm.barrier()
 
     for i_run, syst in enumerate([False, True]):
+        # First, the loop runs to generate pointings w/o systematics.
+        # Seccond, the loop runs to generate pointings w/o systematics. Then, generate TODs.
         if(rank==0):
             message = f"======= Create observations/pointings {i_run}-th loop ========"
             print(message)
@@ -220,9 +222,15 @@ def pointing_systematics(toml_filename):
 
         perf_name = f"run_pointings_{i_run}th"
         with TimeProfiler(name=perf_name, my_param=perf_name) as perf:
+            # make a tempolary simulation: `sim_temp` and detector list: `dets_temp`.
+            # It has same values with `sim` that we declare first, though `sim_temp` and `dets_temp`
+            # will be changed if the loop is syst==True, to impose systematics.
             sim_temp, dets_temp, _channels, _detnames = get_simulation(toml_filename, comm)
             if syst == True:
+                # HWP wedge systematics will be imposed
                 pntsys = lbs.PointingSys(sim_temp, dets_temp)
+
+                # prepare parameters for systematics
                 refractive_idx = 3.1
                 wedge_angle_rad = np.deg2rad(wedge_angle_arcmin / 60)
                 pntsys.hwp.tilt_angle_rad = pntsys.hwp.get_wedgeHWP_pointing_shift_angle(
@@ -230,11 +238,17 @@ def pointing_systematics(toml_filename):
                     refractive_idx
                 )
                 pntsys.hwp.ang_speed_radpsec = sim_temp.instrument.hwp_rpm * 2 * np.pi / 60
-                pntsys.hwp.tilt_phase_rad = 0
+                pntsys.hwp.tilt_phase_rad = 0.0
                 comm.barrier()
+                # Inject the systematics into the quaternions.
+                # After this, `Detector.quats` will be changed.
+                # Note that this wedge systeamtics happens in 19Hz. ]
+                # So we have to prerare the quaternions in 19hz otherwise the
+                # systemtics will not be expressed correctoly.
                 pntsys.hwp.add_hwp_rot_disturb()
 
             comm.barrier()
+            # create the ovserbations
             sim_temp.create_observations(
                 detectors=dets_temp,
                 n_blocks_det=1,
@@ -243,44 +257,65 @@ def pointing_systematics(toml_filename):
             )
 
             comm.barrier()
-
+            # generate spin2eqliptic_quats
             sim_temp.prepare_pointings()
 
             comm.barrier()
 
+            # generate pointings.
+            # after this, the pointings can be accessed by
+            # `sim_temp.observations[i_obs].pointing_matrix`.
             lbs.precompute_pointings(sim_temp.observations)
 
             comm.barrier()
             if(rank==0):
+                # print the total memory alloc. by quats
                 nbyte = sim_temp.spin2ecliptic_quats.nbytes()
                 logger.info(f"Total byte of quats: {nbyte*size}")
 
+            # Because we have already got pointings (θ,φ,ψ),
+            # we don't need quaternions anymore. let's delete it to save memory.
             del sim_temp.spin2ecliptic_quats
 
             n_obs = len(sim_temp.observations)
             if syst == False:
                 pointings_no_syst = []
                 for i_obs in range(n_obs):
+                    # store the pointings w/o systematics to use the "map-making"
                     pointings_no_syst.append(sim_temp.observations[i_obs].pointing_matrix)
                     if(rank==0):
                         nbyte = sys.getsizeof(pointings_no_syst)
                         logger.info(f"Total byte of pointing_matrix(w/o sys): {nbyte*size}")
+                    # Since the pointings w/o systematics are have already stored in the list,
+                    # we delete the .pointing_matrix to save memory.
                     del sim_temp.observations[i_obs].pointing_matrix
             else:
                 pointings_syst = []
                 for i_obs in range(n_obs):
+                    # store the pointings w/ systematics to use "TOD-generation"
                     pointings_syst.append(sim_temp.observations[i_obs].pointing_matrix)
                     if(rank==0):
                         nbyte = sys.getsizeof(pointings_syst)
                         logger.info(f"Total byte of pointing_matrix(w/ sys): {nbyte*size}")
+                    # Since the pointings w/ systematics are have already stored in the list,
+                    # we delete the .pointing_matrix to save memory.
                     del sim_temp.observations[i_obs].pointing_matrix
 
                 for i_obs in range(n_obs):
                     for i_det in range(ndet):
+                        # this is the tricky part of this pipeline.
+                        # the ψ with systematics is should not be affected by HWP wedge.
+                        # i.e. is is expected to be same with ψ without systematics.
+                        # However, due to the coding (maybe can be solved by sphistication)
+                        # simulation has artifact.
+                        # So we overwrite it by hands as below:
                         pointings_syst[i_obs][i_det,:,2] = pointings_no_syst[i_obs][i_det,:,2]
 
                 comm.barrier()
-
+                # make TODs by pointings w/ systematics
+                # The TODs should be generated higher resolution (high nside) because
+                # we have to simulate a TOD change due to the small pointing error.
+                # In the production run, it is recommended to use nside_in=2048.
                 lbs.scan_map_in_observations(
                     sim_temp.observations,
                     pointings=pointings_syst,
@@ -288,10 +323,12 @@ def pointing_systematics(toml_filename):
                     input_map_in_galactic=True,
                     interpolation="linear",
                 )
-
+                # rename sim_temp to sim_syst because it is frozen.
                 sim_syst = sim_temp
         if(rank==0):
             perf_list.append(perf)
+
+    # print MPI infomation
     descr = sim_temp.describe_mpi_distribution()
     print(descr)
 
@@ -301,6 +338,7 @@ def pointing_systematics(toml_filename):
         logger.info(message)
 
     if save_hitmap == True:
+        # save a plot and fits file of hitmap which is calculated systemtics pointings
         perf_name = "run_hitmap"
         with TimeProfiler(name=perf_name, my_param=perf_name) as perf:
             npix_out = hp.nside2npix(nside_out)
@@ -316,14 +354,14 @@ def pointing_systematics(toml_filename):
                     iobs_idet_hitmap, _ = np.histogram(hitpix, bins=np.arange(npix_out+1))
                     hit_map += iobs_idet_hitmap
             comm.barrier()
-
+            # after this, we don't need `pointing_sys` anymore, so delete it.
             del pointings_syst
 
             hit_map = comm.allreduce(hit_map, op=mpi.MPI.SUM)
             comm.barrier()
         if(rank==0):
             perf_list.append(perf)
-
+            # save hitmap to fits file and append it to figure
             message = "======= Save hitmap ========"
             print(message)
             logger.info(message)
@@ -336,6 +374,8 @@ def pointing_systematics(toml_filename):
             hp.write_map(map_path+map_name+'.fits', hit_map, overwrite=True)
             figures.append(plot_map(hit_map, title=map_name, save_filename=map_name+'.png'))
     else:
+        # if save_hitmap == False
+        # we just prepare `figures`, `map_path` and directory to save output maps.
         if(rank==0):
             figures = []
             map_path = os.path.join(base_path, 'maps/')
@@ -346,6 +386,8 @@ def pointing_systematics(toml_filename):
     comm.barrier()
 
     if(rank==0):
+        # save 2 plots: time-TOD plot; freq-PS(power spectrum of TOD)
+        # we can confirm the 1f systematic effect due to the HWP wedge by PS plot.
         message = "======= Save TOD and power spectrum plots ========"
         print(message)
         logger.info(message)
@@ -403,6 +445,9 @@ def pointing_systematics(toml_filename):
     perf_name = "run_binner"
     with TimeProfiler(name=perf_name, my_param=perf_name) as perf:
         comm.barrier()
+        # Do binning map-making
+        # The TOD is expected to be generated higher nside_in than nside_out
+        # in the case of production run. Here, the map will be down-graded by binner.
         binner_results = lbs.make_binned_map(
             nside=nside_out,  # one can set also a different resolution than the input map
             observations=sim_syst.observations,
@@ -415,7 +460,7 @@ def pointing_systematics(toml_filename):
         message = "======= Save output map ========"
         print(message)
         logger.info(message)
-
+        # save the figure of output map.
         map_name = f'{telescope}_{channels[0]}_binnedmap_{duration_s}s_wedge_{wedge_angle_arcmin}arcmin'
         figures = save_append_maps(
             map_path,
