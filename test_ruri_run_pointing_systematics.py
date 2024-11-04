@@ -29,7 +29,7 @@ if mode == "debug":
 # --------- TOML file params setting ----------- #
 # [general]
 imo_path = f"/home/{jss_account[0]}/{jss_account}/data/litebird/litebird_imo/IMO/schema.json"
-base_dir_name = "241104_test1"
+base_dir_name = "241104_test2_2hr"
 imo_version = 'v2'
 telescope = 'MFT'
 nside_in = 128
@@ -43,11 +43,12 @@ channel = 'M1-100'
 det_names_file = 'detectors_'+telescope+'_'+channel+'_T+B'
 base_path = os.path.join(coderoot, f'outputs/{base_dir_name}')
 start_time = 0 # '2030-04-01T00:00:00' #float for circular motion of earth around Sun, string for ephemeridis
-duration_s = 3600#*24*365 #simulated seconds
+duration_s = 3600*2#*24*365 #simulated seconds
 sampling_hz = 19.0
 gamma = 0.0
 wedge_angle_arcmin = 1.0
 hwp_rpm = None # if None, the imo value will be used.
+save_hitmap = False
 
 # --------- Setting is done, bottoms are automated ----------- #
 
@@ -84,6 +85,7 @@ nside_out = {nside_out}
 random_seed = {random_seed}
 cmb_seed = {cmb_seed}
 cmb_r = {cmb_r}
+save_hitmap = '{save_hitmap}'
 
 [simulation]
 base_path = '{base_path}'

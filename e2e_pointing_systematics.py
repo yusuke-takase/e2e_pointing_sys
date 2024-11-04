@@ -13,6 +13,8 @@ from litebird_sim import mpi
 import json
 from litebird_sim import TimeProfiler, profile_list_to_speedscope
 from logging import getLogger
+from distutils.util import strtobool
+
 logger = getLogger(__name__)
 #logger.info('message')
 
@@ -157,6 +159,7 @@ def pointing_systematics(toml_filename):
         nside_out = int(sim.parameters["general"]["nside_out"])
         cmb_seed = int(sim.parameters["general"]["cmb_seed"])
         cmb_r = sim.parameters["general"]["cmb_r"]
+        save_hitmap = bool(strtobool(sim.parameters["general"]["save_hitmap"]))
 
         base_path = sim.parameters["simulation"]["base_path"]
         start_time = int(sim.parameters["simulation"]["start_time"])
@@ -286,52 +289,57 @@ def pointing_systematics(toml_filename):
                     interpolation="linear",
                 )
 
-                sim_syst = (sim_temp)
+                sim_syst = sim_temp
         if(rank==0):
             perf_list.append(perf)
     descr = sim_temp.describe_mpi_distribution()
     print(descr)
-
 
     if(rank==0):
         message = "======= Calculate hitmap ========"
         print(message)
         logger.info(message)
 
-    perf_name = "run_hitmap"
-    with TimeProfiler(name=perf_name, my_param=perf_name) as perf:
-        npix_out = hp.nside2npix(nside_out)
-        hit_map = np.zeros(npix_out)
-        comm.barrier()
-        for i_obs in range(n_obs):
-            for i_det in range(ndet):
-                hitpix = hp.ang2pix(
-                    nside_out,
-                    pointings_syst[i_obs][i_det,:,0], # theta
-                    pointings_syst[i_obs][i_det,:,1], # phi
-                )
-                iobs_idet_hitmap, _ = np.histogram(hitpix, bins=np.arange(npix_out+1))
-                hit_map += iobs_idet_hitmap
-        comm.barrier()
-        hit_map = comm.allreduce(hit_map, op=mpi.MPI.SUM)
-        comm.barrier()
-    if(rank==0):
-        perf_list.append(perf)
+    if save_hitmap == True:
+        perf_name = "run_hitmap"
+        with TimeProfiler(name=perf_name, my_param=perf_name) as perf:
+            npix_out = hp.nside2npix(nside_out)
+            hit_map = np.zeros(npix_out)
+            comm.barrier()
+            for i_obs in range(n_obs):
+                for i_det in range(ndet):
+                    hitpix = hp.ang2pix(
+                        nside_out,
+                        pointings_syst[i_obs][i_det,:,0], # theta
+                        pointings_syst[i_obs][i_det,:,1], # phi
+                    )
+                    iobs_idet_hitmap, _ = np.histogram(hitpix, bins=np.arange(npix_out+1))
+                    hit_map += iobs_idet_hitmap
+            comm.barrier()
 
+            del pointings_syst
+
+            hit_map = comm.allreduce(hit_map, op=mpi.MPI.SUM)
+            comm.barrier()
+        if(rank==0):
+            perf_list.append(perf)
+
+            message = "======= Save hitmap ========"
+            print(message)
+            logger.info(message)
+            map_path = os.path.join(base_path, 'maps/')
+            if not os.path.exists(map_path):
+                os.mkdir(map_path)
+
+            figures = []
+            map_name = f'{telescope}_{channels[0]}_hitmap_{duration_s}s_wedge_{wedge_angle_arcmin}arcmin'
+            hp.write_map(map_path+map_name+'.fits', hit_map, overwrite=True)
+            figures.append(plot_map(hit_map, title=map_name, save_filename=map_name+'.png'))
+    else:
+        if(rank==0):
+            figures = []
+            map_path = os.path.join(base_path, 'maps/')
     del pointings_syst
-
-    if(rank==0):
-        message = "======= Save hitmap ========"
-        print(message)
-        logger.info(message)
-        map_path = os.path.join(base_path, 'maps/')
-        if not os.path.exists(map_path):
-            os.mkdir(map_path)
-
-        figures = []
-        map_name = f'{telescope}_{channels[0]}_hitmap_{duration_s}s_wedge_{wedge_angle_arcmin}arcmin'
-        hp.write_map(map_path+map_name+'.fits', hit_map, overwrite=True)
-        figures.append(plot_map(hit_map, title=map_name, save_filename=map_name+'.png'))
 
     comm.barrier()
 
