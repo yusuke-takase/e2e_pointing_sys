@@ -64,7 +64,13 @@ def save_append_maps(map_path,map_name,map_output,cov_output,figures):
                                 save_filename=map_name+'_'+fields[i]+'.png'))
     return figures
 
-def get_simulation(toml_filename, comm):
+def get_simulation(toml_filename: str, comm):
+    """Generate simulation class
+
+    Args:
+        toml_filename (str): name of toml file which includes simulation infomation.
+        comm: MPI communicator
+    """
     tomlfile_path = os.path.dirname(
         os.getcwd())+"/ancillary/"+toml_filename+".toml"
     toml_data = toml.load(open(tomlfile_path))
@@ -197,21 +203,21 @@ def pointing_systematics(toml_filename):
         perf_list.append(perf)
     else:
         maps = None
+    del sim
 
-    # broadcast maps read by rank 0
     maps = comm.bcast(maps, root=0)
 
     comm.barrier()
 
     for i_run, syst in enumerate([False, True]):
         if(rank==0):
-            message = f"======= Create observations/pointings {i_run}th loop ========"
+            message = f"======= Create observations/pointings {i_run}-th loop ========"
             print(message)
             logger.info(message)
 
         perf_name = f"run_pointings_{i_run}th"
         with TimeProfiler(name=perf_name, my_param=perf_name) as perf:
-            sim_temp, dets_temp, channels, detnames = get_simulation(toml_filename, comm)
+            sim_temp, dets_temp, _channels, _detnames = get_simulation(toml_filename, comm)
             if syst == True:
                 pntsys = lbs.PointingSys(sim_temp, dets_temp)
                 refractive_idx = 3.1
@@ -242,18 +248,30 @@ def pointing_systematics(toml_filename):
             lbs.precompute_pointings(sim_temp.observations)
 
             comm.barrier()
+            if(rank==0):
+                nbyte = sim_temp.spin2ecliptic_quats.nbytes()
+                logger.info(f"Total byte of quats: {nbyte*size}")
+
+            del sim_temp.spin2ecliptic_quats
 
             n_obs = len(sim_temp.observations)
             if syst == False:
-                pointings_no_syst = [
-                    sim_temp.observations[i_obs].pointing_matrix
-                    for i_obs in range(n_obs)
-                    ]
+                pointings_no_syst = []
+                for i_obs in range(n_obs):
+                    pointings_no_syst.append(sim_temp.observations[i_obs].pointing_matrix)
+                    if(rank==0):
+                        nbyte = sys.getsizeof(pointings_no_syst)
+                        logger.info(f"Total byte of pointing_matrix(w/o sys): {nbyte*size}")
+                    del sim_temp.observations[i_obs].pointing_matrix
             else:
-                pointings_syst = [
-                    sim_temp.observations[i_obs].pointing_matrix
-                    for i_obs in range(n_obs)
-                    ]
+                pointings_syst = []
+                for i_obs in range(n_obs):
+                    pointings_syst.append(sim_temp.observations[i_obs].pointing_matrix)
+                    if(rank==0):
+                        nbyte = sys.getsizeof(pointings_syst)
+                        logger.info(f"Total byte of pointing_matrix(w/ sys): {nbyte*size}")
+                    del sim_temp.observations[i_obs].pointing_matrix
+
                 for i_obs in range(n_obs):
                     for i_det in range(ndet):
                         pointings_syst[i_obs][i_det,:,2] = pointings_no_syst[i_obs][i_det,:,2]
@@ -267,14 +285,13 @@ def pointing_systematics(toml_filename):
                     input_map_in_galactic=True,
                     interpolation="linear",
                 )
-                #sim_syst = copy.deepcopy(sim_temp)
+
                 sim_syst = (sim_temp)
         if(rank==0):
             perf_list.append(perf)
     descr = sim_temp.describe_mpi_distribution()
     print(descr)
-    #del sim
-    #del sim_temp
+
 
     if(rank==0):
         message = "======= Calculate hitmap ========"
@@ -300,6 +317,8 @@ def pointing_systematics(toml_filename):
         comm.barrier()
     if(rank==0):
         perf_list.append(perf)
+
+    del pointings_syst
 
     if(rank==0):
         message = "======= Save hitmap ========"

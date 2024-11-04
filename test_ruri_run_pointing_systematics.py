@@ -16,24 +16,24 @@ user_email = 'takase_y@s.okayama-u.ac.jp'  # your email for notification
 
 vnode = 1 # 仮想ノード数, RURIは100が最大
 vnode_core = 20 # ノードあたりの要求コア数, RURIは36が最大
-vnode_mem = 2048 # ノードあたりの要求メモリ量, RURIは5,850GBが最大
+vnode_mem = 64 # ノードあたりの要求メモリ量, RURIは5,850GBが最大
 
-#mode = "debug" # debugモードでの最大使用コア1800
-mode = "default"
+mode = "debug" # debugモードでの最大使用コア1800
+#mode = "default"
 job_name = "pntsys"
 # When you use the `debug` mode you should requesgt <= 1800 == "00:30:00"
 elapse = "02:30:00"
 if mode == "debug":
-    elapse = "00:30:00"
+    elapse = "00:15:00"
 
 # --------- TOML file params setting ----------- #
 # [general]
 imo_path = f"/home/{jss_account[0]}/{jss_account}/data/litebird/litebird_imo/IMO/schema.json"
-base_dir_name = "test_ruri_wedge_1yr_20core"
+base_dir_name = "241104_test1"
 imo_version = 'v2'
 telescope = 'MFT'
-nside_in = 2048
-nside_out = 512
+nside_in = 128
+nside_out = 128
 cmb_seed = 33
 cmb_r = 0.0
 random_seed = 12345
@@ -43,7 +43,7 @@ channel = 'M1-100'
 det_names_file = 'detectors_'+telescope+'_'+channel+'_T+B'
 base_path = os.path.join(coderoot, f'outputs/{base_dir_name}')
 start_time = 0 # '2030-04-01T00:00:00' #float for circular motion of earth around Sun, string for ephemeridis
-duration_s = 3600*24*365 #simulated seconds
+duration_s = 3600#*24*365 #simulated seconds
 sampling_hz = 19.0
 gamma = 0.0
 wedge_angle_arcmin = 1.0
