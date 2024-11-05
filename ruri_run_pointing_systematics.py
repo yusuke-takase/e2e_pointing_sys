@@ -16,18 +16,17 @@ resource_unit = "RURI"
 user_email = 'takase_y@s.okayama-u.ac.jp'  # your email for notification
 
 vnode = 1 # 仮想ノード数, RURIは100が最大
-vnode_core = 20 # ノードあたりの要求コア数, RURIは36が最大
-vnode_mem = 1024 # ノードあたりの要求メモリ量, RURIは5,850GBが最大
-duration_s = 3600*24*365 #simulated seconds
-nside_in = 2048
+vnode_core = 1 # ノードあたりの要求コア数, RURIは36が最大
+vnode_mem = 64 # ノードあたりの要求メモリ量, RURIは5,850GBが最大
+duration_s = 3600#*24*30#*365 #simulated seconds
+nside_in = 512
 nside_out = 512
-base_dir_name = "241104_test3_1yr_2048"
-
-#mode = "debug" # debugモードでの最大使用コア1800
-mode = "default"
+base_dir_name = "241105_test1_1day_512"
+mode = "debug" # debugモードでの最大使用コア1800
+#mode = "default"
 elapse = "02:30:00"
 if mode == "debug":
-    elapse = "00:15:00"
+    elapse = "00:30:00"
 
 
 job_name = "pntsys"
