@@ -7,7 +7,6 @@ from astropy.time import Time
 import pathlib
 import os
 import sys
-import copy
 import toml
 from litebird_sim import mpi
 import json
@@ -16,7 +15,6 @@ from logging import getLogger
 from distutils.util import strtobool
 
 logger = getLogger(__name__)
-#logger.info('message')
 
 def plot_map(m, title, save_filename):
     '''
@@ -112,7 +110,7 @@ def get_simulation(toml_filename: str, comm):
     channels = det_file[:, 1]  # [det_file[1]]
     # [det_file[4].astype(dtype=float)]
     noises = det_file[:, 4].astype(dtype=float)
-    detnames = det_file[:, 5]  # [det_file[5]]
+    detnames = [det_file[:, 5][0]]  # [det_file[5]]
 
     # number of detectors = raws of {det_names_file}.txt
     n_det = np.size(detnames)
@@ -125,10 +123,12 @@ def get_simulation(toml_filename: str, comm):
             f"/releases/{imo_version}/satellite/{telescope}/instrument_info",
         )
     )
-    sim.set_scanning_strategy(
-        imo_url=f"/releases/{imo_version}/satellite/scanning_parameters/",
-        delta_time_s=1.0 / sampling_hz,
-    )
+
+    #sim.set_scanning_strategy(
+    #    imo_url=f"/releases/{imo_version}/satellite/scanning_parameters/",
+    #    delta_time_s=delta_time_s,
+    #)
+
     if hwp_rpm is not None:
         sim.set_hwp(lbs.IdealHWP(hwp_rpm * 2 * np.pi / 60)) # set hwp_rpm used in simulation by specified value in toml file
         sim.instrument.hwp_rpm = hwp_rpm
@@ -145,8 +145,12 @@ def get_simulation(toml_filename: str, comm):
         )
         det.sampling_rate_hz = sampling_hz
         dets.append(det)
-    return sim, dets, channels, detnames
+    return sim, dets, imo, channels, detnames
 
+def printlog(message, rank):
+    if(rank==0):
+        #print(message) # show message as a standerd output
+        logger.info(message)
 
 def pointing_systematics(toml_filename):
     comm = lbs.MPI_COMM_WORLD
@@ -159,7 +163,7 @@ def pointing_systematics(toml_filename):
     perf_name = "start" # name of the nest, this is recorded in profile.json
     with TimeProfiler(name=perf_name, my_param=perf_name) as perf:
         # generate simulation and store values from toml file
-        sim, dets, channels, detnames = get_simulation(toml_filename, comm)
+        sim, dets, imo, channels, detnames = get_simulation(toml_filename, comm)
         hpc_info = sim.parameters["hpc"]
         general_info = sim.parameters["general"]
         simlation_info = sim.parameters["simulation"]
@@ -177,6 +181,7 @@ def pointing_systematics(toml_filename):
         start_time = int(sim.parameters["simulation"]["start_time"])
         duration_s = sim.parameters["simulation"]["duration_s"]
         sampling_hz = sim.parameters["simulation"]["sampling_hz"]
+        delta_time_s = sim.parameters["simulation"]["delta_time_s"]
         gamma = sim.parameters["simulation"]["gamma"]
         wedge_angle_arcmin = sim.parameters["simulation"]["wedge_angle_arcmin"]
 
@@ -190,10 +195,7 @@ def pointing_systematics(toml_filename):
     if(rank==0):
         perf_list = [] # make list for conputation time profile
         perf_list.append(perf) # result of `perf_name = "start"` is stored into perf_list
-
-        message = "======= Prepare input maps ========"
-        print(message) # show message as a standerd output
-        logger.info(message) # show message as a standard error
+        printlog("======= Prepare input maps ========", rank)
 
         perf_name = "run_mbs"
         with TimeProfiler(name=perf_name, my_param=perf_name) as perf:
@@ -215,9 +217,7 @@ def pointing_systematics(toml_filename):
                 channel_list=ch_info
             )
             maps = mbs.run_all()[0]
-            message = "======= Inputmap is generated ========"
-            print(message)
-            logger.info(message)
+            printlog("======= Inputmap is generated ========", rank)
         perf_list.append(perf)
     else:
         maps = None
@@ -230,20 +230,44 @@ def pointing_systematics(toml_filename):
     for i_run, syst in enumerate([True, False]):
         # First, the loop runs to generate pointings w/ systematics.
         # Seccond, the loop runs to generate pointings w/o systematics. Then, generate TODs.
-        if(rank==0):
-            message = f"======= Create observations/pointings {i_run}-th loop ========"
-            print(message)
-            logger.info(message)
+        printlog(
+            f"======= start obs {i_run}-th loop ========",
+            rank
+        )
 
         perf_name = f"run_pointings_{i_run}th"
         with TimeProfiler(name=perf_name, my_param=perf_name) as perf:
             # generate simulation which is used in temporary.
-            sim_temp, dets_temp, _channels, _detnames = get_simulation(toml_filename, comm)
+            sim_temp, dets_temp, imo, _channels, _detnames = get_simulation(toml_filename, comm)
+            printlog("======= sim_temp done ========", rank)
+            comm.barrier()
+
+            # create obserbvation
+            (obs,) = sim_temp.create_observations(
+                detectors=dets_temp,
+                n_blocks_det=1,
+                n_blocks_time=size,
+                split_list_over_processes=False
+            )
+
+            scanning_strategy = lbs.SpinningScanningStrategy.from_imo(
+                imo=imo, url= f"/releases/{imo_version}/satellite/scanning_parameters/"
+            )
+
+            printlog("======= create_observation done ========", rank)
 
             comm.barrier()
 
-            print(f"--> The {rank}/{size} starts to calculate pointings.")
+            sim_temp.spin2ecliptic_quats = scanning_strategy.generate_spin2ecl_quaternions(
+                start_time=obs.start_time,
+                time_span_s=obs.n_samples/obs.sampling_rate_hz,
+                delta_time_s=delta_time_s,
+            )
+            nbyte = sim_temp.spin2ecliptic_quats.nbytes()
+            printlog(f"*** Byte of `spin2ecliptic_quats` per rank: {nbyte/1e6} MB ***", rank)
+
             if syst == True:
+                comm.barrier()
                 pntsys = lbs.PointingSys(sim_temp, dets_temp) # generate pointing sys. instance
                 refractive_idx = 3.1 # set refractive index of HWP
                 wedge_angle_rad = np.deg2rad(wedge_angle_arcmin / 60) # HWP wedge andle
@@ -261,26 +285,22 @@ def pointing_systematics(toml_filename):
                 # add disturbance to detector's quaternions given by IMO
                 # now, `dets_temp` will be changed.
                 pntsys.hwp.add_hwp_rot_disturb()
-
-            comm.barrier()
-            # create obserbvation
-            sim_temp.create_observations(
-                    detectors=dets_temp,
-                    n_blocks_det=1,
-                    n_blocks_time=size,
-                    split_list_over_processes=False
-                )
-            comm.barrier()
-            # prepare quaternions to compute pointings
-            sim_temp.prepare_pointings()
+                printlog("======= pntsys done ========", rank)
             comm.barrier()
 
-            if(rank==0):
-                # print the total memory alloc. by quats
-                nbyte = sim_temp.spin2ecliptic_quats.nbytes()
-                logger.info(f"Total byte of quats: {nbyte*size}")
 
-            n_obs = len(sim_temp.observations)
+            comm.barrier()
+            printlog("======= create_observation done ========", rank)
+            lbs.prepare_pointings(obs, sim_temp.instrument, sim_temp.spin2ecliptic_quats, hwp=sim_temp.hwp)
+
+            printlog("======= prepare_pointings done ========", rank)
+
+            if save_hitmap == True:
+                comm.barrier()
+                lbs.precompute_pointings(obs)
+            comm.barrier()
+
+
 
             if syst == True:
                 # if it is in systematics loop, we compute TODs by systematic pointing
@@ -288,26 +308,25 @@ def pointing_systematics(toml_filename):
 
                 # store TODs into sim_temp.observations
                 lbs.scan_map_in_observations(
-                    sim_temp.observations,
+                    obs,
                     maps=maps,
                     input_map_in_galactic=True,
                     interpolation="linear",
                 )
+                printlog("======= scan_map done ========", rank)
 
                 comm.barrier()
                 del maps # input maps will not be needed, it is expected to allocate huge memory (nside=2048) so we delete it.
 
-                tods_sys = [] # We save TODs into list here, because `sim_temp.observations` will be initialized.
-                for i_obs in range(n_obs):
-                    tod_idet = [sim_temp.observations[i_obs].tod[i_det] for i_det in range(n_det)]
-                    tods_sys.append(tod_idet)
+                # preserve TODs with systeamtics because `obs.tod` will be initialized.
+                tods_sys = np.empty_like(obs.tod)
+                tods_sys = obs.tod
+
+                printlog("======= tods_sys copied ========", rank)
 
                 if save_hitmap == True:
                     # save hitmap if it is save_hitmap==True
-                    if(rank==0):
-                        message = "======= Calculate hitmap ========"
-                        print(message)
-                        logger.info(message)
+                    printlog("======= calc hitmap done ========", rank)
 
                     perf_name = "run_hitmap"
                     with TimeProfiler(name=perf_name, my_param=perf_name) as perf:
@@ -315,16 +334,15 @@ def pointing_systematics(toml_filename):
                         npix_out = hp.nside2npix(nside_out)
                         hit_map = np.zeros(npix_out)
                         comm.barrier()
-                        for i_obs in range(n_obs):
-                            for i_det in range(n_det):
-                                hitpix = hp.ang2pix(
-                                    nside_out,
-                                    sim_temp.observations[i_obs].pointing_matrix[i_det,:,0], # theta
-                                    sim_temp.observations[i_obs].pointing_matrix[i_det,:,1], # phi
-                                )
-                                # counts number of hit per pixel, we use `npix_out` as bins.
-                                iobs_idet_hitmap, _ = np.histogram(hitpix, bins=np.arange(npix_out+1))
-                                hit_map += iobs_idet_hitmap
+                        for i_det in range(n_det):
+                            hitpix = hp.ang2pix(
+                                nside_out,
+                                obs.pointing_matrix[i_det,:,0], # theta
+                                obs.pointing_matrix[i_det,:,1], # phi
+                            )
+                            # counts number of hit per pixel, we use `npix_out` as bins.
+                            idet_hitmap, _ = np.histogram(hitpix, bins=np.arange(npix_out+1))
+                            hit_map += idet_hitmap
                         comm.barrier()
                         # gather every hit_map per rank into same place
                         hit_map = comm.allreduce(hit_map, op=mpi.MPI.SUM)
@@ -332,9 +350,6 @@ def pointing_systematics(toml_filename):
                     if(rank==0):
                         perf_list.append(perf)
                         # save hitmap to fits file and append it to figure
-                        message = "======= Save hitmap ========"
-                        print(message)
-                        logger.info(message)
 
                         # this dir. is used for saving maps
                         map_path = os.path.join(base_path, 'maps/')
@@ -346,42 +361,47 @@ def pointing_systematics(toml_filename):
                         map_name = f'{telescope}_{channels[0]}_hitmap_{duration_s}s_wedge_{wedge_angle_arcmin}arcmin'
                         hp.write_map(map_path+map_name+'.fits', hit_map, overwrite=True)
                         figures.append(plot_map(hit_map, title=map_name, save_filename=map_name+'.png'))
+                        printlog("======= hitmap saved ========", rank)
+                    comm.barrier()
+
+                    del hit_map # delete hit_map after save
+                else:
+                    # if save_hitmap == False
+                    # we just prepare `figures`, `map_path` and directory to save output maps.
+                    if(rank==0):
+                        figures = []
+                        map_path = os.path.join(base_path, 'maps/')
+                        if not os.path.exists(map_path):
+                            os.mkdir(map_path)
             else:
-                # if save_hitmap == False
-                # we just prepare `figures`, `map_path` and directory to save output maps.
-                if(rank==0):
-                    figures = []
-                    map_path = os.path.join(base_path, 'maps/')
-                    if not os.path.exists(map_path):
-                        os.mkdir(map_path)
                 # We forth to inject `tod_sys` into `sim_temp.observations`
                 # after this, `sim_temp` has:
                 #    - "TODs" calculated by systematic pointing
                 #    - "pointings" calculated without pointing systematics
                 # By using this `sim_temp` we can simply do map-making which estimates
                 # observed maps with pointing systematics
-                for i_obs in range(n_obs):
-                    for i_det in range(n_det):
-                        sim_temp.observations[i_obs].tod[i_det] = tods_sys[i_obs][i_det]
+                obs.tod = tods_sys
                 # now we make an access `sim_temp` by `sim_syst` to make it is clear
                 sim_syst = sim_temp
+                obs_syst = obs
         if(rank==0):
             perf_list.append(perf)
-            # print how MPI worked
-            print(sim_temp.describe_mpi_distribution())
+            printlog(f"======= {i_run}-th loop done ========", rank)
+        comm.barrier()
+
+    # print how MPI worked
+    descr = sim_syst.describe_mpi_distribution()
+    print(descr)
 
     if(rank==0):
         # save 2 plots: time-TOD plot; freq-PS(power spectrum of TOD)
         # we can confirm the 1f systematic effect due to the HWP wedge by PS plot.
-        message = "======= Save TOD and power spectrum plots ========"
-        print(message)
-        logger.info(message)
-
         save_filename = f"{telescope}_{channels[0]}_tod_ps_{duration_s}s_wedge_{wedge_angle_arcmin}arcmin.png"
         time_cutoff_s = 3600*3
         limit = int(time_cutoff_s*sampling_hz)
-        time_array = sim_syst.observations[0].get_times()[:limit]
-        tods = sim_syst.observations[0].tod[0][:limit]
+        i_det = 0
+        time_array = obs_syst.get_times()[:limit]
+        tods = obs_syst.tod[i_det][:limit]
         ps_syst = np.fft.fft(tods)
         freqs = np.fft.fftfreq(len(ps_syst), d=1.0/sampling_hz)
 
@@ -421,28 +441,29 @@ def pointing_systematics(toml_filename):
         ax[1].set_ylabel("Power Spectrum [$K/\sqrt{Hz}$]")
         ax[1].legend()
         figures.append((fig, save_filename))
+        printlog("======= TOD and power spectrum plots saved ========", rank)
 
-    if(rank==0):
-        message = "======= Binning map-making ========"
-        print(message)
-        logger.info(message)
-
+    printlog("======= Start binning map-making ========", rank)
     perf_name = "run_binner"
     with TimeProfiler(name=perf_name, my_param=perf_name) as perf:
         comm.barrier()
         # Do binning map-making
         # The TOD is expected to be generated higher nside_in than nside_out
         # in the case of production run. Here, the map will be down-graded by binner.
-        binner_results = sim_syst.make_binned_map(
+        # `obs_syst` has:
+        #      TODs: simulated by systematic pointing
+        #      obs_syst.pointing_matrix: w/o systeamtics
+        # so we can just do map-making simply as bellow:
+        binner_results = lbs.make_binned_map(
             nside=nside_out,
+            observations=obs_syst,
             output_coordinate_system=lbs.CoordinateSystem.Galactic,
         )
+    printlog("======= Binning map-making done ========", rank)
 
     if (rank == 0):
         perf_list.append(perf)
-        message = "======= Save output map ========"
-        print(message)
-        logger.info(message)
+        printlog("======= Save output map ========", rank)
         # save the figure of output map.
         map_name = f'{telescope}_{channels[0]}_binnedmap_{duration_s}s_wedge_{wedge_angle_arcmin}arcmin'
         figures = save_append_maps(
