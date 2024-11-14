@@ -251,7 +251,8 @@ def pointing_systematics(toml_filename):
             )
 
             scanning_strategy = lbs.SpinningScanningStrategy.from_imo(
-                imo=imo, url= f"/releases/{imo_version}/satellite/scanning_parameters/"
+                url= f"/releases/{imo_version}/satellite/scanning_parameters/",
+                imo=imo,
             )
 
             printlog("======= create_observation done ========", rank)
@@ -268,23 +269,23 @@ def pointing_systematics(toml_filename):
 
             if syst == True:
                 comm.barrier()
-                pntsys = lbs.PointingSys(sim_temp, dets_temp) # generate pointing sys. instance
+                pntsys = lbs.PointingSys(sim_temp, obs, dets_temp) # generate pointing sys. instance
                 refractive_idx = 3.1 # set refractive index of HWP
                 wedge_angle_rad = np.deg2rad(wedge_angle_arcmin / 60) # HWP wedge andle
                 # set actual pointing shift andle by HWP wedge angle
-                pntsys.hwp.tilt_angle_rad = pntsys.hwp.get_wedgeHWP_pointing_shift_angle(
+                tilt_angle_rad = pntsys.hwp.get_wedgeHWP_pointing_shift_angle(
                     wedge_angle_rad,
                     refractive_idx
                 )
                 # rotation freq for circular pointing disturbance, now it is chosen from HWP freq.
                 # so, it cause 1f synchronized systematic effect with HWP
-                pntsys.hwp.ang_speed_radpsec = sim_temp.instrument.hwp_rpm * 2 * np.pi / 60
+                ang_speed_radpsec = sim_temp.instrument.hwp_rpm * 2 * np.pi / 60
                 # initial phase of pointing shift position
-                pntsys.hwp.tilt_phase_rad = 0.0
+                tilt_phase_rad = 0.0
                 comm.barrier()
                 # add disturbance to detector's quaternions given by IMO
                 # now, `dets_temp` will be changed.
-                pntsys.hwp.add_hwp_rot_disturb()
+                pntsys.hwp.add_hwp_rot_disturb(tilt_angle_rad, ang_speed_radpsec, tilt_phase_rad)
                 printlog("======= pntsys done ========", rank)
             comm.barrier()
 
@@ -299,8 +300,6 @@ def pointing_systematics(toml_filename):
                 comm.barrier()
                 lbs.precompute_pointings(obs)
             comm.barrier()
-
-
 
             if syst == True:
                 # if it is in systematics loop, we compute TODs by systematic pointing

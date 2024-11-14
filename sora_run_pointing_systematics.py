@@ -18,25 +18,27 @@ user_email = 'takase_y@s.okayama-u.ac.jp'  # your email for notification
 node_mem = 28 # Unit: GiB, Upper limit=28GiB, Value when unspecified=28GiB
 
 
-node = 2
-mpi_proc = 2 #48*node  # 48   # Upper limit of number of process per node is 48, it can be 48*`node`
-nthreads = int(max_proc * node/mpi_proc) # num of thereads per node
+node = 16
+proc_per_node = 4
+mpi_proc = proc_per_node * node # Total nunm of MPI proc. Upper limit of number of process per node is 48, it can be 48*`node`
+nthreads = int(np.ceil(max_proc/proc_per_node)) # num of thereads per node
 #mpi_option = "rank-map-bynode"
 mpi_option = "rank-map-bychip" #default
-nside_in = 128
-nside_out = 128
-mission_day = 16
+nside_in = 2048
+nside_out = 512
+mission_day = 365
 duration_s = mission_day * day
 sampling_hz = 19.0
 delta_time_s = 1.0/sampling_hz
-
-base_dir_name = f"test6_{mission_day}day_{nside_in}_{node}node_{mpi_proc}proc_{nthreads}thrd"
+wedge_angle_arcmin = 0.0
+base_dir_name = f"test2_{mission_day}day_{nside_in}_{node}node_{mpi_proc}proc_{nthreads}thrd_{int(wedge_angle_arcmin)}amin"
+print(base_dir_name)
 #mode = "debug"
 mode = "default"
 
 job_name = base_dir_name
 # When you use the `debug` mode you should requesgt <= 1800 == "00:30:00"
-elapse = "00:30:00"
+elapse = "01:00:00"
 if mode == "debug":
     elapse = "00:30:00"
 
@@ -58,9 +60,9 @@ base_path = os.path.join(coderoot, f'outputs/{base_dir_name}')
 start_time = 0 # '2030-04-01T00:00:00' #float for circular motion of earth around Sun, string for ephemeridis
 
 gamma = 0.0
-wedge_angle_arcmin = 1.0
+
 hwp_rpm = None # if None, the imo value will be used.
-save_hitmap = True
+save_hitmap = False
 
 # --------- Setting is done, bottoms are automated ----------- #
 
@@ -120,7 +122,7 @@ jobscript_data = f"""#!/bin/zsh
 #JX -L rscunit={resource_unit}
 #JX -L rscgrp={mode}
 #JX -L elapse={elapse}
-#JX -L node={node}
+#JX -L node={node}:mesh
 #JX -L node-mem={node_mem}Gi
 #JX --mpi proc={mpi_proc},{mpi_option}
 #JX -o {base_path}/%n_%j.out
