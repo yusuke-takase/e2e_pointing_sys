@@ -10,6 +10,7 @@ jss_account = whoami.stdout.strip()
 bizcode = os.getenv('BIZCODE') # load registered enviroment variable
 day = 24*3600
 max_proc = 48
+
 # --------- JSS setting ----------- #
 venv_base = f"/ssd/{jss_account[0]}/{jss_account}/.src/lbsim_branches/lbs_hwp_wedge/bin/activate"
 coderoot = f'/home/{jss_account[0]}/{jss_account}/data/program/e2e_sim/pointing_sys'
@@ -17,8 +18,21 @@ resource_unit = "SORA"
 user_email = 'takase_y@s.okayama-u.ac.jp'  # your email for notification
 node_mem = 28 # Unit: GiB, Upper limit=28GiB, Value when unspecified=28GiB
 
+channel = 'M2-166'  # sys.argv[2] #e.g. 'L4-140'
+telescope = channel[0]+'FT'
+det_names_file = 'detectors_'+telescope+'_'+channel+'_T+B'  # _case'+case]
 
-node = 16
+det_names_file_path = f"/data/t/t541/program/e2e_sim/pointing_sys/ancillary/detsfile/pntsys_imo-v2/{telescope}/{det_names_file}.txt"
+det_file = np.genfromtxt(
+    det_names_file_path,
+    skip_header=1,
+    dtype=str
+)
+detnames = det_file[:, 5]
+
+ndet = len(detnames)
+print("ndet: ", ndet)
+node = 12 * int(ndet/2)
 proc_per_node = 4
 mpi_proc = proc_per_node * node # Total nunm of MPI proc. Upper limit of number of process per node is 48, it can be 48*`node`
 nthreads = int(np.ceil(max_proc/proc_per_node)) # num of thereads per node
@@ -29,16 +43,16 @@ nside_out = 512
 mission_day = 365
 duration_s = mission_day * day
 sampling_hz = 19.0
-delta_time_s = 1.0/sampling_hz
+delta_time_s = 1.0/sampling_hz # if systematics is time-dependent, we need to set 1/sampling_rate_hz
 wedge_angle_arcmin = 0.0
-base_dir_name = f"test2_{mission_day}day_{nside_in}_{node}node_{mpi_proc}proc_{nthreads}thrd_{int(wedge_angle_arcmin)}amin"
+base_dir_name = f"prod_{channel}_{mission_day}day_{ndet}ndet_{nside_in}_{node}node_{mpi_proc}proc_{nthreads}thrd_{int(wedge_angle_arcmin)}amin"
 print(base_dir_name)
 #mode = "debug"
 mode = "default"
 
 job_name = base_dir_name
 # When you use the `debug` mode you should requesgt <= 1800 == "00:30:00"
-elapse = "01:00:00"
+elapse = "00:30:00"
 if mode == "debug":
     elapse = "00:30:00"
 
@@ -47,15 +61,13 @@ if mode == "debug":
 imo_path = f"/home/{jss_account[0]}/{jss_account}/data/litebird/litebird_imo/IMO/schema.json"
 
 imo_version = 'v2'
-telescope = 'MFT'  # sys.argv[1] #e.g. 'LFT'
 
 cmb_seed = 33
 cmb_r = 0.0
+make_fg = True
 random_seed = 12345
 
 # [simulation]
-channel = 'M1-100'  # sys.argv[2] #e.g. 'L4-140'
-det_names_file = 'detectors_'+telescope+'_'+channel+'_T+B'  # _case'+case]
 base_path = os.path.join(coderoot, f'outputs/{base_dir_name}')
 start_time = 0 # '2030-04-01T00:00:00' #float for circular motion of earth around Sun, string for ephemeridis
 
@@ -100,10 +112,12 @@ nside_out = {nside_out}
 random_seed = {random_seed}
 cmb_seed = {cmb_seed}
 cmb_r = {cmb_r}
+make_fg = '{make_fg}'
 save_hitmap = '{save_hitmap}'
 
 [simulation]
 base_path = '{base_path}'
+det_names_file_path = '{det_names_file_path}'
 gamma = {gamma}
 start_time = {start_time}
 duration_s = '{duration_s}'
@@ -116,13 +130,13 @@ with open(tomlfile_path, 'w') as f:
     f.write(tomlfile_data)
 
 #time.sleep(0.2)
-jobscript_path = os.path.join(ancillary, det_names_file+".sh")
+jobscript_path = os.path.join(ancillary, det_names_file+toml_uuid+".sh")
 jobscript_data = f"""#!/bin/zsh
 #JX --bizcode {bizcode}
 #JX -L rscunit={resource_unit}
 #JX -L rscgrp={mode}
 #JX -L elapse={elapse}
-#JX -L node={node}:mesh
+#JX -L node={node}
 #JX -L node-mem={node_mem}Gi
 #JX --mpi proc={mpi_proc},{mpi_option}
 #JX -o {base_path}/%n_%j.out
@@ -156,3 +170,4 @@ process = subprocess.Popen("jxsub " + jobscript_path,
 print("out: "+str(stdout_data).split('b\'')[1][:-3])
 print("err: "+str(stderr_data).split('b\'')[1][:-3])
 print('')
+#os.remove(jobscript_path)

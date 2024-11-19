@@ -95,14 +95,12 @@ def get_simulation(toml_filename: str, comm):
     det_names_file = sim.parameters["general"]["det_names_file"]
     sampling_hz = sim.parameters["simulation"]["sampling_hz"]
     hwp_rpm = sim.parameters["simulation"]["hwp_rpm"]
+    det_names_file_path = sim.parameters["simulation"]["det_names_file_path"]
     if hwp_rpm == 'None':
         hwp_rpm = None # hwp_rpm is determined by IMO
     else:
         hwp_rpm = float(hwp_rpm) # hwp_rpm is determined by specified value by toml file
 
-    # read channel, noise and detector names
-    det_names_file_path = os.path.dirname(
-        os.getcwd())+"/ancillary/detsfile/"+det_names_file+".txt"
     det_file = np.genfromtxt(det_names_file_path,
                             skip_header=1,
                             dtype=str)
@@ -110,7 +108,8 @@ def get_simulation(toml_filename: str, comm):
     channels = det_file[:, 1]  # [det_file[1]]
     # [det_file[4].astype(dtype=float)]
     noises = det_file[:, 4].astype(dtype=float)
-    detnames = [det_file[:, 5][0]]  # [det_file[5]]
+    #detnames = [det_file[:, 5][0]]  # [det_file[5]]
+    detnames = det_file[:, 5]  # [det_file[5]]
 
     # number of detectors = raws of {det_names_file}.txt
     n_det = np.size(detnames)
@@ -123,11 +122,6 @@ def get_simulation(toml_filename: str, comm):
             f"/releases/{imo_version}/satellite/{telescope}/instrument_info",
         )
     )
-
-    #sim.set_scanning_strategy(
-    #    imo_url=f"/releases/{imo_version}/satellite/scanning_parameters/",
-    #    delta_time_s=delta_time_s,
-    #)
 
     if hwp_rpm is not None:
         sim.set_hwp(lbs.IdealHWP(hwp_rpm * 2 * np.pi / 60)) # set hwp_rpm used in simulation by specified value in toml file
@@ -158,7 +152,7 @@ def pointing_systematics(toml_filename):
     size = comm.Get_size()
     print(f"Hello world: rank {rank} of {size} process")
     comm.barrier()
-
+    tomlfile_path = os.path.dirname(os.getcwd())+"/ancillary/"+toml_filename+".toml"
     # measure computation time within the nest
     perf_name = "start" # name of the nest, this is recorded in profile.json
     with TimeProfiler(name=perf_name, my_param=perf_name) as perf:
@@ -175,6 +169,7 @@ def pointing_systematics(toml_filename):
         nside_out = int(sim.parameters["general"]["nside_out"])
         cmb_seed = int(sim.parameters["general"]["cmb_seed"])
         cmb_r = sim.parameters["general"]["cmb_r"]
+        make_fg = bool(strtobool(sim.parameters["general"]["make_fg"]))
         save_hitmap = bool(strtobool(sim.parameters["general"]["save_hitmap"]))
 
         base_path = sim.parameters["simulation"]["base_path"]
@@ -202,9 +197,9 @@ def pointing_systematics(toml_filename):
             Mbsparams = lbs.MbsParameters(
                 cmb_r=cmb_r,
                 make_cmb=True,
-                make_fg=False,
+                make_fg=make_fg,
                 seed_cmb=cmb_seed,
-                fg_models=["pysm_synch_0", "pysm_dust_0"],
+                fg_models=["pysm_synch_1", "pysm_dust_1"],
                 gaussian_smooth=True,
                 bandpass_int=False,
                 nside=nside_in,
@@ -543,7 +538,8 @@ obs = lbs.io.read_one_observation("path/to/file.hdf5", limit_mpi_rank=False, tod
             hpc_info = hpc_info,
             general_info=general_info,
             simulation_info=simlation_info,
-            descr=descr,
+            #descr=descr,
+            descr="Display false",
 
             used_hwp_rpm=sim_syst.instrument.hwp_rpm,
             figures=figures,
@@ -559,3 +555,4 @@ obs = lbs.io.read_one_observation("path/to/file.hdf5", limit_mpi_rank=False, tod
 
         with open(f"{base_path}/profile.json", "wt") as out_f:
             json.dump(profile_list_to_speedscope(perf_list), out_f)
+        os.remove(tomlfile_path)
