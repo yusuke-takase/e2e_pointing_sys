@@ -18,11 +18,12 @@ resource_unit = "SORA"
 user_email = 'takase_y@s.okayama-u.ac.jp'  # your email for notification
 node_mem = 28 # Unit: GiB, Upper limit=28GiB, Value when unspecified=28GiB
 
-channel = 'M2-166'  # sys.argv[2] #e.g. 'L4-140'
+channel = sys.argv[1] #e.g. 'L4-140'
+
 telescope = channel[0]+'FT'
 det_names_file = 'detectors_'+telescope+'_'+channel+'_T+B'  # _case'+case]
 
-det_names_file_path = f"/data/t/t541/program/e2e_sim/pointing_sys/ancillary/detsfile/pntsys_imo-v2/{telescope}/{det_names_file}.txt"
+det_names_file_path = f"{coderoot}/ancillary/detsfile/pntsys_imo-v2/{telescope}/{det_names_file}.txt"
 det_file = np.genfromtxt(
     det_names_file_path,
     skip_header=1,
@@ -32,7 +33,7 @@ detnames = det_file[:, 5]
 
 ndet = len(detnames)
 print("ndet: ", ndet)
-node = 12 * int(ndet/2)
+node = 6 * int(np.ceil(ndet/4))
 proc_per_node = 4
 mpi_proc = proc_per_node * node # Total nunm of MPI proc. Upper limit of number of process per node is 48, it can be 48*`node`
 nthreads = int(np.ceil(max_proc/proc_per_node)) # num of thereads per node
@@ -44,7 +45,9 @@ mission_day = 365
 duration_s = mission_day * day
 sampling_hz = 19.0
 delta_time_s = 1.0/sampling_hz # if systematics is time-dependent, we need to set 1/sampling_rate_hz
-wedge_angle_arcmin = 0.0
+
+wedge_angle_arcmin = float(sys.argv[2])
+
 base_dir_name = f"prod_{channel}_{mission_day}day_{ndet}ndet_{nside_in}_{node}node_{mpi_proc}proc_{nthreads}thrd_{int(wedge_angle_arcmin)}amin"
 print(base_dir_name)
 #mode = "debug"
@@ -52,7 +55,7 @@ mode = "default"
 
 job_name = base_dir_name
 # When you use the `debug` mode you should requesgt <= 1800 == "00:30:00"
-elapse = "00:30:00"
+elapse = "01:00:00"
 if mode == "debug":
     elapse = "00:30:00"
 
