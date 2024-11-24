@@ -4,6 +4,7 @@ import sys
 import os
 import uuid
 import time
+from distutils.util import strtobool
 
 whoami = subprocess.run(['whoami'], capture_output=True, text=True)
 jss_account = whoami.stdout.strip()
@@ -18,37 +19,45 @@ resource_unit = "SORA"
 user_email = 'takase_y@s.okayama-u.ac.jp'  # your email for notification
 node_mem = 28 # Unit: GiB, Upper limit=28GiB, Value when unspecified=28GiB
 
-channel = sys.argv[1] #e.g. 'L4-140'
+channel = "M1-100"#sys.argv[1] #e.g. 'L4-140'
 
 telescope = channel[0]+'FT'
-det_names_file = 'detectors_'+telescope+'_'+channel+'_T+B'  # _case'+case]
+det_names_file = 'detectors_'+telescope+'_'+channel+'_T+B'
 
-det_names_file_path = f"{coderoot}/ancillary/detsfile/pntsys_imo-v2/{telescope}/{det_names_file}.txt"
+#det_names_file_path = f"{coderoot}/ancillary/detsfile/pntsys_imo-v2/{telescope}/{det_names_file}.txt"
+det_names_file_path = f"/home/t/t541/data/program/e2e_sim/pointing_sys/ancillary/detsfile/{det_names_file}.txt"
 det_file = np.genfromtxt(
     det_names_file_path,
     skip_header=1,
     dtype=str
 )
-detnames = det_file[:, 5]
+#detnames = det_file[:, 5]
 
-ndet = len(detnames)
-print("ndet: ", ndet)
-node = 6 * int(np.ceil(ndet/4))
-proc_per_node = 4
+#ndet = len(detnames)
+#print("ndet: ", ndet)
+node = 24#6 * int(np.ceil(ndet/4))
+proc_per_node = 2
 mpi_proc = proc_per_node * node # Total nunm of MPI proc. Upper limit of number of process per node is 48, it can be 48*`node`
 nthreads = int(np.ceil(max_proc/proc_per_node)) # num of thereads per node
 #mpi_option = "rank-map-bynode"
 mpi_option = "rank-map-bychip" #default
-nside_in = 2048
-nside_out = 512
+nside_in = int(sys.argv[1])
+nside_out = 128
 mission_day = 365
 duration_s = mission_day * day
 sampling_hz = 19.0
 delta_time_s = 1.0/sampling_hz # if systematics is time-dependent, we need to set 1/sampling_rate_hz
 
 wedge_angle_arcmin = float(sys.argv[2])
+only_T = sys.argv[3]
+only_P = sys.argv[4]
 
-base_dir_name = f"prod_{channel}_{mission_day}day_{ndet}ndet_{nside_in}_{node}node_{mpi_proc}proc_{nthreads}thrd_{int(wedge_angle_arcmin)}amin"
+#base_dir_name = f"verif_T_{only_T}_P_{only_P}_{channel}_{mission_day}day_{ndet}ndet_{nside_in}_{node}node_{mpi_proc}proc_{nthreads}thrd_{int(wedge_angle_arcmin)}amin"
+base_dir_name = f"verif1_top_T_{only_T}_P_{only_P}_{channel}_{mission_day}day_{nside_in}_{int(wedge_angle_arcmin)}amin"
+
+only_T = bool(strtobool(sys.argv[3]))
+only_P = bool(strtobool(sys.argv[4]))
+
 print(base_dir_name)
 #mode = "debug"
 mode = "default"
@@ -67,11 +76,12 @@ imo_version = 'v2'
 
 cmb_seed = 33
 cmb_r = 0.0
-make_fg = True
+make_fg = False
 random_seed = 12345
 
+
 # [simulation]
-base_path = os.path.join(coderoot, f'outputs/{base_dir_name}')
+base_path = os.path.join(coderoot, f'outputs/pix_effect_verif_top/{base_dir_name}')
 start_time = 0 # '2030-04-01T00:00:00' #float for circular motion of earth around Sun, string for ephemeridis
 
 gamma = 0.0
@@ -117,6 +127,8 @@ cmb_seed = {cmb_seed}
 cmb_r = {cmb_r}
 make_fg = '{make_fg}'
 save_hitmap = '{save_hitmap}'
+only_T = '{only_T}'
+only_P = '{only_P}'
 
 [simulation]
 base_path = '{base_path}'

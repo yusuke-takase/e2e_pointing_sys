@@ -73,7 +73,7 @@ def get_simulation(toml_filename: str, comm):
         comm: MPI communicator
     """
     tomlfile_path = os.path.dirname(
-        os.getcwd())+"/ancillary/"+toml_filename+".toml"
+        os.getcwd())+"/ancillary/job_scripts/"+toml_filename+".toml"
     # load toml file
     toml_data = toml.load(open(tomlfile_path))
     random_seed = int(toml_data["general"]["random_seed"])
@@ -108,8 +108,11 @@ def get_simulation(toml_filename: str, comm):
     channels = det_file[:, 1]  # [det_file[1]]
     # [det_file[4].astype(dtype=float)]
     noises = det_file[:, 4].astype(dtype=float)
-    #detnames = [det_file[:, 5][0]]  # [det_file[5]]
-    detnames = det_file[:, 5]  # [det_file[5]]
+
+    #-----must be confirmed ---------
+    detnames = [det_file[:, 5][0]]  # [det_file[5]]
+    #detnames = det_file[:, 5]  # [det_file[5]]
+    #--------------------------------
 
     # number of detectors = raws of {det_names_file}.txt
     n_det = np.size(detnames)
@@ -152,7 +155,7 @@ def pointing_systematics(toml_filename):
     size = comm.Get_size()
     print(f"Hello world: rank {rank} of {size} process")
     comm.barrier()
-    tomlfile_path = os.path.dirname(os.getcwd())+"/ancillary/"+toml_filename+".toml"
+    tomlfile_path = os.path.dirname(os.getcwd())+"/ancillary/job_scripts/"+toml_filename+".toml"
     # measure computation time within the nest
     perf_name = "start" # name of the nest, this is recorded in profile.json
     with TimeProfiler(name=perf_name, my_param=perf_name) as perf:
@@ -171,6 +174,8 @@ def pointing_systematics(toml_filename):
         cmb_r = sim.parameters["general"]["cmb_r"]
         make_fg = bool(strtobool(sim.parameters["general"]["make_fg"]))
         save_hitmap = bool(strtobool(sim.parameters["general"]["save_hitmap"]))
+        only_T = bool(strtobool(sim.parameters["general"]["only_T"]))
+        only_P = bool(strtobool(sim.parameters["general"]["only_P"]))
 
         base_path = sim.parameters["simulation"]["base_path"]
         start_time = int(sim.parameters["simulation"]["start_time"])
@@ -212,6 +217,10 @@ def pointing_systematics(toml_filename):
                 channel_list=ch_info
             )
             maps = mbs.run_all()[0]
+            if only_T==True:
+                maps[channels[0]][1:] = 0.0
+            if only_P==True:
+                maps[channels[0]][0] = 0.0
             printlog("======= Inputmap is generated ========", rank)
         perf_list.append(perf)
     else:
