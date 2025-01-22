@@ -9,5 +9,3 @@ This is a script to run the e2e simulation of pointing systematics for LiteBIRD.
 - `ruri_run_pointing_systematics.py`
   - The code runs the e2e simulation in JSS3-RURI
 
-# GIF display test
-![FP Usage](./figures/plot_fp_usage.gif)
